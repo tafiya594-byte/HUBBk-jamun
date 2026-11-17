@@ -1,0 +1,158 @@
+name: Build Debug APK & Publish Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-debug-apk:
+    name: Build & Publish Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Temurin Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify Java environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "JAVA_HOME=${JAVA_HOME:-<unset>}"
+          java -version
+
+          if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME}/bin/java" ]; then
+            echo "ERROR: JAVA_HOME is not configured properly." >&2
+            exit 1
+          fi
+
+          JAVA_VER_LINE="$(java -version 2>&1 | head -n 1 || true)"
+          RAW_VER="$(echo "$JAVA_VER_LINE" | sed -n 's/.*version "\([^"]*\)".*/\1/p')"
+
+          if [ -z "$RAW_VER" ]; then
+            echo "ERROR: Unable to detect active Java version from output: $JAVA_VER_LINE" >&2
+            exit 1
+          fi
+
+          if [[ "$RAW_VER" == 1.* ]]; then
+            MAJOR_VER="$(echo "$RAW_VER" | cut -d'.' -f2)"
+          else
+            MAJOR_VER="$(echo "$RAW_VER" | cut -d'.' -f1 | cut -d'-' -f1 | cut -d'+' -f1)"
+          fi
+
+          if ! [[ "$MAJOR_VER" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: Unable to parse Java major version from: $RAW_VER" >&2
+            exit 1
+          fi
+
+          echo "Detected Java major version: $MAJOR_VER"
+          if [ "$MAJOR_VER" -lt 17 ]; then
+            echo "ERROR: Java 17 or newer is required, but detected Java $MAJOR_VER." >&2
+            exit 1
+          fi
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Create temporary debug keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="./debug.keystore"
+          KEYTOOL_BIN="${JAVA_HOME}/bin/keytool"
+
+          if [ ! -x "$KEYTOOL_BIN" ]; then
+            echo "ERROR: keytool not found in configured Java 17 installation at $KEYTOOL_BIN" >&2
+            exit 1
+          fi
+
+          if [ -f "$KEYSTORE_PATH" ]; then
+            echo "Debug keystore already exists at $KEYSTORE_PATH; skipping generation."
+          else
+            if ! "$KEYTOOL_BIN" -genkeypair -noprompt \
+              -keystore "$KEYSTORE_PATH" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"; then
+              echo "ERROR: Failed to create temporary debug keystore at $KEYSTORE_PATH" >&2
+              exit 1
+            fi
+          fi
+
+          if [ ! -f "$KEYSTORE_PATH" ]; then
+            echo "ERROR: Temporary debug keystore is missing after generation." >&2
+            exit 1
+          fi
+          echo "Temporary debug keystore ready."
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK_PATH" ]; then
+            echo "ERROR: Expected debug APK not found at $APK_PATH" >&2
+            if [ -d "app/build/outputs/apk" ]; then
+              echo "Discovered APK files inside app/build/outputs/apk:" >&2
+              find app/build/outputs/apk -type f -name "*.apk" >&2 || true
+            else
+              echo "Directory app/build/outputs/apk does not exist." >&2
+            fi
+            exit 1
+          fi
+
+          echo "Verified debug APK at $APK_PATH"
+          ls -lh "$APK_PATH"
+
+      - name: Remove temporary debug keystore
+        if: always()
+        shell: bash
+        run: rm -f ./debug.keystore
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: abid-messenger-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Publish debug APK to GitHub Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="debug-build-${{ github.run_number }}"
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK_PATH" --clobber
+          else
+            gh release create "$TAG" "$APK_PATH" \
+              --target "${{ github.sha }}" \
+              --title "ABID Messenger Debug Build #${{ github.run_number }}" \
+              --notes "Automated debug APK build from commit ${{ github.sha }} on branch ${{ github.ref_name }}." \
+              --latest
+          fi

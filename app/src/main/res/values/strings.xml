@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">ABID Messenger</string>
+    <string name="brand_tagline">Fast, private real-time messaging &amp; HD calls</string>
+    <string name="sign_in_with_google">Continue with Google</string>
+    <string name="complete_profile_title">Set up your profile</string>
+    <string name="chats_tab">Chats</string>
+    <string name="status_tab">Status</string>
+    <string name="calls_tab">Calls</string>
+    <string name="settings_tab">Settings</string>
+    <string name="no_chats_title">No conversations yet</string>
+    <string name="no_chats_subtitle">Tap the message button to find users by username or start a group chat.</string>
+    <string name="no_statuses_title">No status updates</string>
+    <string name="no_statuses_subtitle">Share a photo, video, or text status that disappears after 24 hours.</string>
+    <string name="no_calls_title">No call history</string>
+    <string name="no_calls_subtitle">Start an audio or video call from any conversation.</string>
+    <string name="default_about">Hey there! I am using ABID Messenger.</string>
+    <string name="message_deleted_placeholder">This message was deleted</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "ABID Messenger",
+  "description": "Real-time multi-user Android messaging, status updates, and WebRTC audio/video calling app powered by Firebase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
